@@ -601,7 +601,7 @@ def show_sales_strategy():
 
             # Always compute baseline
             routes_before = baseline_plan(orders, cfg)
-            b_trucks, b_cost, b_dist, b_vol, b_eff = summarize(routes_before)
+            b_trucks, b_cost, b_dist, _, b_eff = summarize(routes_before)
 
             if not st.session_state.optimization_done:
                 st.subheader("Current Configuration Preview")
@@ -616,7 +616,7 @@ def show_sales_strategy():
             else:
                 # Compute optimized results
                 routes_after, unassigned, _, _ = optimize_fleet_and_routes(orders, cfg)
-                a_trucks, a_cost, a_dist, a_vol, a_eff = summarize(routes_after)
+                a_trucks, a_cost, a_dist, _, a_eff = summarize(routes_after)
 
                 st.subheader("Before vs After (Key Metrics)")
                 k1, k2, k3, k4 = st.columns(4)
