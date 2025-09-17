@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
 from datetime import date, timedelta
+#test
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -21,7 +22,8 @@ with st.sidebar:
         "Dashboard": "📊",
         "Order Processing": "📋",
         "Logistics": "🚚",
-        "Sales Strategy": "⭐"
+        "Sales Strategy": "⭐",
+        "Truck Management": "🛻"
     }
     
     st.markdown("---")
@@ -38,6 +40,9 @@ with st.sidebar:
         st.rerun()
     if st.button(f'{page_icons["Sales Strategy"]} Sales Strategy', use_container_width=True):
         st.session_state.page = "Sales Strategy"
+        st.rerun()
+    if st.button(f'{page_icons["Truck Management"]} Truck Management', use_container_width=True):
+        st.session_state.page = "Truck Management"
         st.rerun()
         
     st.sidebar.markdown("---")
@@ -707,6 +712,134 @@ def show_sales_strategy():
                         fig_c.update_layout(margin=dict(l=10, r=10, t=30, b=10), xaxis_tickangle=-45)
                         st.plotly_chart(fig_c, use_container_width=True)
 
+
+# =================================================================================
+# --- Truck Management Page ---
+# =================================================================================
+def show_truck_management():
+    import calendar
+    from datetime import datetime
+    # --- Truck resources ---
+    TRUCKS = {
+        "Lorry A": {"capacity": 14, "count": 5},
+        "Lorry B": {"capacity": 24, "count": 7},
+        "Lorry C": {"capacity": 29, "count": 2},
+    }
+    CAPACITY_TO_TRUCK = {14: "Lorry A", 24: "Lorry B", 29: "Lorry C"}
+    TRUCK_TYPES = ["Lorry A", "Lorry B", "Lorry C"]
+
+    st.set_page_config(page_title="Lorry Truck Scheduler", layout="wide")
+    st.title("🚚 Lorry Truck Optimization Scheduler")
+
+    # --- Month selection (default = current year/month) ---
+    today = datetime.today()
+    months = {calendar.month_name[i]: i for i in range(1, 13)}
+    col_m1, col_m2 = st.columns([2,1])
+    with col_m1:
+        selected_month = st.selectbox("Select Month", options=list(months.keys()), index=today.month - 1)
+    with col_m2:
+        selected_year = st.number_input("Year", min_value=2000, max_value=2100, value=today.year, step=1)
+
+    month_num = months[selected_month]
+    days_in_month = calendar.monthrange(selected_year, month_num)[1]
+
+    # --- Orders memory ---
+    if "orders" not in st.session_state:
+        # each order: {day:int, load:int, customer:str}
+        st.session_state["orders"] = []
+
+    st.sidebar.subheader("Actions")
+    if st.sidebar.button("🧹 Clear all orders"):
+        st.session_state["orders"] = []
+        st.sidebar.success("All orders cleared for this session.")
+
+    # --- Input form (fixed loads + customer) ---
+    st.subheader("Add Required Loads")
+    st.markdown("Allowed loads: **14, 24, 29 tons**. Please specify customer/destination.")
+
+    with st.form("add_order"):
+        c1, c2, c3 = st.columns([1,1,2])
+        with c1:
+            day = st.number_input("Day of Month", min_value=1, max_value=days_in_month, value=1)
+        with c2:
+            load = st.selectbox("Required Load (tons)", options=[14, 24, 29], index=0)
+        with c3:
+            customer = st.text_input("Customer / Destination", placeholder="e.g., ACME Co. (Bangna)")
+
+        submitted = st.form_submit_button("Add Order")
+
+        if submitted:
+            customer = customer.strip()
+            if not customer:
+                st.warning("Please enter a customer/destination.")
+            else:
+                truck_type = CAPACITY_TO_TRUCK[load]
+                max_available = TRUCKS[truck_type]["count"]
+
+                # Count existing orders for this truck type on that day
+                existing = sum(
+                    1 for o in st.session_state["orders"]
+                    if o["day"] == day and CAPACITY_TO_TRUCK[o["load"]] == truck_type
+                )
+
+                if existing + 1 > max_available:
+                    st.warning(
+                        f"❌ Cannot add order: {truck_type} on day {day} would exceed daily availability "
+                        f"({max_available} trucks)."
+                    )
+                else:
+                    st.session_state["orders"].append({"day": day, "load": load, "customer": customer})
+                    st.success(f"✅ Added {load}T on day {day} ({truck_type}) → {customer}")
+
+    # --- Orders table (raw) ---
+    orders_df = pd.DataFrame(st.session_state["orders"])
+    if not orders_df.empty:
+        st.subheader("Orders")
+        st.dataframe(orders_df.sort_values(["day", "load"]), use_container_width=True, hide_index=True)
+
+    # --- Build per-day, per-truck-type list of customers ---
+    def group_customers_by_day_and_type(orders, days_in_month):
+        # dict: day -> truck_type -> [customers...]
+        grouped = {d: {t: [] for t in TRUCK_TYPES} for d in range(1, days_in_month + 1)}
+        for o in sorted(orders, key=lambda x: (x["day"], x["load"], x["customer"].lower())):
+            t = CAPACITY_TO_TRUCK[o["load"]]
+            grouped[o["day"]][t].append(o["customer"])
+        return grouped
+
+    grouped = group_customers_by_day_and_type(st.session_state["orders"], days_in_month)
+
+    # --- Helper: render sockets line like "🔴 CustA | 🔴 CustB | ⚪ | ⚪ ..." ---
+    def sockets_line(used_customers, capacity):
+        used = [f"🔴 {c}" for c in used_customers]
+        avail_count = max(capacity - len(used_customers), 0)
+        avail = ["⚪"] * avail_count
+        return " | ".join(used + avail) if capacity > 0 else ""
+
+    # --- Build visualization table dataframe ---
+    viz_rows = []
+    for day in range(1, days_in_month + 1):
+        row = {"Day": day}
+        for t in TRUCK_TYPES:
+            cap = TRUCKS[t]["count"]
+            custs = grouped[day][t]
+            row[f"{t} ({TRUCKS[t]['capacity']}T)"] = sockets_line(custs, cap)
+        viz_rows.append(row)
+
+    viz_df = pd.DataFrame(viz_rows)
+
+    st.subheader("Schedule (Slots Table)")
+    st.caption("⚪ = available slot, 🔴 = booked slot (shows customer)")
+
+    # ---- Show FULL table, hide the left index (keep Day column) ----
+    styled = (
+        viz_df
+        .style
+        .hide(axis="index")  # hides the left unnamed index column
+        .set_properties(**{"white-space": "pre-wrap", "line-height": "1.3"})
+    )
+
+    st.table(styled)  # st.table renders the full table (no scroll)
+
 # =================================================================================
 # --- Main App Logic ---
 # =================================================================================
@@ -718,3 +851,5 @@ elif st.session_state.page == "Logistics":
     show_logistics()
 elif st.session_state.page == "Sales Strategy":
     show_sales_strategy()
+elif st.session_state.page == "Truck Management":
+    show_truck_management()
