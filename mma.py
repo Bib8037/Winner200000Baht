@@ -23,7 +23,8 @@ with st.sidebar:
         "Order Processing": "📋",
         "Logistics": "🚚",
         "Sales Strategy": "⭐",
-        "Truck Management": "🛻"
+        "Truck Management": "🛻",
+        "OCR": "📝"
     }
     
     st.markdown("---")
@@ -31,19 +32,51 @@ with st.sidebar:
     
     if st.button(f'{page_icons["Dashboard"]} Dashboard', use_container_width=True):
         st.session_state.page = "Dashboard"
-        st.rerun()
+        st.experimental_rerun()
     if st.button(f'{page_icons["Order Processing"]} Order Processing', use_container_width=True):
         st.session_state.page = "Order Processing"
-        st.rerun()
+        st.experimental_rerun()
     if st.button(f'{page_icons["Logistics"]} Logistics', use_container_width=True):
         st.session_state.page = "Logistics"
-        st.rerun()
+        st.experimental_rerun()
     if st.button(f'{page_icons["Sales Strategy"]} Sales Strategy', use_container_width=True):
         st.session_state.page = "Sales Strategy"
-        st.rerun()
+        st.experimental_rerun()
     if st.button(f'{page_icons["Truck Management"]} Truck Management', use_container_width=True):
         st.session_state.page = "Truck Management"
-        st.rerun()
+        st.experimental_rerun()
+    if st.button(f'{page_icons["OCR"]} OCR', use_container_width=True):
+        st.session_state.page = "OCR"
+        st.experimental_rerun()
+# =================================================================================
+# --- OCR PAGE ---
+# =================================================================================
+def show_ocr():
+    st.title("PDF Text & OCR Extractor")
+    st.write("Upload a PDF to extract text. If no text is found, OCR will be used.")
+    uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
+    if uploaded_file:
+        try:
+            import fitz  # PyMuPDF
+            import pytesseract
+            from PIL import Image
+            pdf_bytes = uploaded_file.read()
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            extracted_text = ""
+            for i, page in enumerate(doc):
+                text = page.get_text()
+                if text.strip():
+                    extracted_text += f"\n--- Page {i+1} (Text) ---\n" + text
+                else:
+                    # Convert page to image and run OCR
+                    pix = page.get_pixmap()
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    ocr_text = pytesseract.image_to_string(img, lang='eng')
+                    extracted_text += f"\n--- Page {i+1} (OCR) ---\n" + ocr_text
+            st.subheader("Extracted Text")
+            st.text_area("PDF Text & OCR", extracted_text, height=400)
+        except Exception as e:
+            st.error(f"Text/OCR extraction failed: {e}")
         
     st.sidebar.markdown("---")
     st.sidebar.info("© 2024 MMA Corp.")
@@ -853,3 +886,5 @@ elif st.session_state.page == "Sales Strategy":
     show_sales_strategy()
 elif st.session_state.page == "Truck Management":
     show_truck_management()
+elif st.session_state.page == "OCR":
+    show_ocr()
