@@ -24,30 +24,47 @@ with st.sidebar:
         "Logistics": "🚚",
         "Sales Strategy": "⭐",
         "Truck Management": "🛻",
-        "OCR": "📝"
+        "OCR": "📝",
+        "Logistics Optimization": "🚛"
     }
     
     st.markdown("---")
     st.markdown("### Navigate to:")
+
+    def safe_rerun():
+        if hasattr(st, "rerun"):
+            st.rerun()
+        elif hasattr(st, "experimental_rerun"):
+            st.experimental_rerun()
     
     if st.button(f'{page_icons["Dashboard"]} Dashboard', use_container_width=True):
         st.session_state.page = "Dashboard"
-        st.experimental_rerun()
+        # st.experimental_rerun()
+        safe_rerun()
     if st.button(f'{page_icons["Order Processing"]} Order Processing', use_container_width=True):
         st.session_state.page = "Order Processing"
-        st.experimental_rerun()
+        # st.experimental_rerun()
+        safe_rerun()
     if st.button(f'{page_icons["Logistics"]} Logistics', use_container_width=True):
         st.session_state.page = "Logistics"
-        st.experimental_rerun()
+        # st.experimental_rerun()
+        safe_rerun()
     if st.button(f'{page_icons["Sales Strategy"]} Sales Strategy', use_container_width=True):
         st.session_state.page = "Sales Strategy"
-        st.experimental_rerun()
+        # st.experimental_rerun()
+        safe_rerun()
     if st.button(f'{page_icons["Truck Management"]} Truck Management', use_container_width=True):
         st.session_state.page = "Truck Management"
-        st.experimental_rerun()
+        # st.experimental_rerun()
+        safe_rerun()
     if st.button(f'{page_icons["OCR"]} OCR', use_container_width=True):
         st.session_state.page = "OCR"
-        st.experimental_rerun()
+        # st.experimental_rerun()
+        safe_rerun()
+    if st.button(f'{page_icons["Logistics Optimization"]} Logistics Optimization', use_container_width=True):
+        st.session_state.page = "Logistics Optimization"
+        # st.experimental_rerun()
+        safe_rerun()
 # =================================================================================
 # --- OCR PAGE ---
 # =================================================================================
@@ -745,6 +762,211 @@ def show_sales_strategy():
                         fig_c.update_layout(margin=dict(l=10, r=10, t=30, b=10), xaxis_tickangle=-45)
                         st.plotly_chart(fig_c, use_container_width=True)
 
+# =================================================================================
+# --- Logistic Route optimization ---
+# =================================================================================
+# 🚚 Truck fleet setup
+TRUCK_FLEET = {
+    "lorry_14t": {"capacity": 14, "count": 5},
+    "lorry_24t": {"capacity": 24, "count": 7},
+    "lorry_29t": {"capacity": 29, "count": 2},
+}
+
+# 📍 Provinces with multiple trips/day
+MULTI_TRIP_PROVINCES = {
+    "Rayong": 2
+}
+
+def logistics_optimization_page():
+    st.title("🚛 Logistics Optimization for Polymers")
+
+    # Ensure state variables exist
+    if "all_orders" not in st.session_state or not isinstance(st.session_state.all_orders, list):
+        st.session_state.all_orders = []  # store every order
+    if "schedule" not in st.session_state or not isinstance(st.session_state.schedule, dict):
+        st.session_state.schedule = {}
+    if "moved_orders" not in st.session_state or not isinstance(st.session_state.moved_orders, list):
+        st.session_state.moved_orders = []
+
+    # ===============================
+    # 🗑️ CLEAR OPTIONS
+    # ===============================
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("🗑️ Clear All Orders"):
+            st.session_state.all_orders = []
+            st.session_state.schedule = {}
+            st.session_state.moved_orders = []
+            st.success("✅ All orders have been cleared.")
+
+    with col2:
+        clear_date = st.date_input("Select date to clear bookings", value=date.today())
+        if st.button("❌ Clear Selected Date Orders"):
+            st.session_state.all_orders = [
+                o for o in st.session_state.all_orders if o["desired"] != clear_date
+            ]
+            run_optimization()
+            st.success(f"✅ Cleared all orders on {clear_date}")
+
+    # ===============================
+    # 📋 NEW ORDER FORM
+    # ===============================
+    st.subheader("📋 Enter New Order")
+    with st.form("order_form"):
+        customer = st.text_input("Customer Company Name")
+        location = st.text_input("Delivery Location (Province)")
+        qty = st.number_input("Quantity of Polymers (tons)", min_value=0.1, step=0.1)
+        desired_date = st.date_input("Earliest / Exact Delivery Date", min_value=date.today())
+        max_date = st.date_input(
+            "Latest Acceptable Delivery Date",
+            value=desired_date, min_value=desired_date
+        )
+        submit = st.form_submit_button("Add Order")
+
+    if submit:
+        truck_type = auto_select_truck(qty)
+        order = {
+            "customer": customer,
+            "location": location,
+            "qty": qty,
+            "truck_type": truck_type,
+            "desired": desired_date,
+            "max": max_date
+        }
+        st.session_state.all_orders.append(order)
+        run_optimization()
+        st.success(f"✅ Order for {customer} added using **{truck_type}**")
+
+    # ===============================
+    # 📅 SHOW SCHEDULE
+    # ===============================
+    st.subheader("📅 Allocated Schedule (Optimized)")
+    schedule_df = get_schedule_dataframe_v2()
+    st.dataframe(schedule_df)
+
+    # ===============================
+    # 💡 RECOMMENDATIONS
+    # ===============================
+    recommendations = recommend_moves()
+    if recommendations:
+        st.subheader("💡 Recommendations to Resolve Overbookings")
+        for r in recommendations:
+            if r["to_date"]:
+                st.write(f"📢 Move **{r['customer']}** from {r['from_date']} → {r['to_date']}")
+            else:
+                st.write(f"⚠️ Could not schedule **{r['customer']}** (needs manual decision)")
+    
+    # ===============================
+    # 📦 FINAL DELIVERY PLAN SUMMARY
+    # ===============================
+    st.subheader("📦 Final Delivery Plan After Optimization")
+    summary_df = get_final_delivery_summary()
+    if not summary_df.empty:
+        st.dataframe(summary_df)
+    else:
+        st.info("No deliveries scheduled yet.")
+
+# -------------------------------------
+# HELPER FUNCTIONS
+# -------------------------------------
+
+def auto_select_truck(qty):
+    """Pick smallest truck type that can handle qty."""
+    if qty <= TRUCK_FLEET["lorry_14t"]["capacity"]:
+        return "lorry_14t"
+    elif qty <= TRUCK_FLEET["lorry_24t"]["capacity"]:
+        return "lorry_24t"
+    else:
+        return "lorry_29t"
+
+def run_optimization():
+    """Greedy optimization to assign orders without exceeding truck limits."""
+    st.session_state.schedule = {}
+    moved_orders = []
+
+    # Sort by least flexibility first (keep least flexible on desired date if possible)
+    orders_sorted = sorted(
+        st.session_state.all_orders,
+        key=lambda o: (o["max"] - o["desired"]).days
+    )
+
+    for order in orders_sorted:
+        if not isinstance(order, dict) or "truck_type" not in order:
+            continue
+
+        trip_multiplier = MULTI_TRIP_PROVINCES.get(order["location"].title().strip(), 1)
+        assigned = False
+
+        for d in pd.date_range(order["desired"], order["max"]):
+            used = sum(1 for o in st.session_state.schedule.get(d.date(), [])
+                       if isinstance(o, dict) and o.get("truck_type") == order["truck_type"])
+            total_can_use = TRUCK_FLEET[order["truck_type"]]["count"] * trip_multiplier
+
+            if used < total_can_use:
+                # Assign this order to schedule
+                if d.date() not in st.session_state.schedule:
+                    st.session_state.schedule[d.date()] = []
+                st.session_state.schedule[d.date()].append(order.copy())
+                if d.date() != order["desired"]:
+                    moved_orders.append({
+                        "customer": order["customer"],
+                        "from_date": order["desired"],
+                        "to_date": d.date()
+                    })
+                assigned = True
+                break
+
+        if not assigned:
+            moved_orders.append({
+                "customer": order["customer"],
+                "from_date": order["desired"],
+                "to_date": None  # Could not schedule within window
+            })
+
+    st.session_state.moved_orders = moved_orders
+
+def get_schedule_dataframe_v2():
+    """Return DataFrame showing truck usage and availability."""
+    data = []
+    for offset in range(0, 30):
+        day = date.today() + timedelta(days=offset)
+        row = {"Date": day}
+        for t in TRUCK_FLEET.keys():
+            used = sum(1 for o in st.session_state.schedule.get(day, [])
+                       if isinstance(o, dict) and o.get("truck_type") == t)
+            total = TRUCK_FLEET[t]["count"]
+            row[f"{t}_used"] = used
+            row[f"{t}_available"] = total - used
+        data.append(row)
+    return pd.DataFrame(data)
+
+def get_final_delivery_summary():
+    """Return DataFrame of all deliveries after optimization."""
+    rows = []
+    for day, orders in sorted(st.session_state.schedule.items()):
+        for order in orders:
+            rows.append({
+                "Final Delivery Date": day,
+                "Customer": order.get("customer"),
+                "Location": order.get("location"),
+                "Quantity (t)": order.get("qty"),
+                "Truck Type": order.get("truck_type"),
+                "Original Desired Date": order.get("desired"),
+            })
+    return pd.DataFrame(rows)
+
+def recommend_moves():
+    """Show the move recommendations stored from last optimization."""
+    return st.session_state.get("moved_orders", [])
+
+recommendations = recommend_moves()
+if recommendations:
+    st.subheader("💡 Recommendations to Resolve Overbookings")
+    for r in recommendations:
+        if r["to_date"]:
+            st.write(f"📢 Move **{r['customer']}** from {r['from_date']} → {r['to_date']}")
+        else:
+            st.write(f"⚠️ Could not schedule **{r['customer']}** (needs manual decision)")
 
 # =================================================================================
 # --- Truck Management Page ---
@@ -826,7 +1048,7 @@ def show_truck_management():
 
     # --- Orders table (raw) ---
     orders_df = pd.DataFrame(st.session_state["orders"])
-    if not orders_df.empty:
+    if not orders_df.empty and len(st.session_state["orders"]) > 0:
         st.subheader("Orders")
         st.dataframe(orders_df.sort_values(["day", "load"]), use_container_width=True, hide_index=True)
 
@@ -888,3 +1110,5 @@ elif st.session_state.page == "Truck Management":
     show_truck_management()
 elif st.session_state.page == "OCR":
     show_ocr()
+elif st.session_state.page == "Logistics Optimization":
+    logistics_optimization_page()
