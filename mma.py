@@ -25,7 +25,7 @@ with st.sidebar:
         "Sales Strategy": "⭐",
         "Truck Management": "🛻",
         "OCR": "📝",
-        "Logistics & TruckOptimization": "🚛"
+        "Logistics Optimization": "🚛"
     }
     
     st.markdown("---")
