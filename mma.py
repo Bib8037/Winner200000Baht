@@ -815,7 +815,17 @@ def logistics_optimization_page():
     with st.form("order_form"):
         customer = st.text_input("Customer Company Name")
         location = st.text_input("Delivery Location (Province)")
-        qty = st.number_input("Quantity of Polymers (tons)", min_value=0.1, step=0.1)
+        truck_size = st.selectbox("Choose Truck Size (tons)", options=[14, 24, 29])
+        
+        # Weight options based on truck size
+        if truck_size == 14:
+            weight_options = [11, 12, 14]
+        elif truck_size == 24:
+            weight_options = [18, 19, 20, 21, 22, 24, 25]
+        else:  # truck_size == 29
+            weight_options = [29]
+            
+        qty = st.selectbox("Choose Weight (tons)", options=weight_options)
         desired_date = st.date_input("Earliest / Exact Delivery Date", min_value=date.today())
         max_date = st.date_input(
             "Latest Acceptable Delivery Date",
